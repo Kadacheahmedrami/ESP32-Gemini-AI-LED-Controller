@@ -10,7 +10,7 @@ const char* ssid     = "Tenda1200";
 const char* password = "78787878";
 
 // Gemini API configuration
-const char* Gemini_Token = "AIzaSyAs44KUuNewiuVQynu3ywdByeJCepX0TzE";
+const char* Gemini_Token = "";
 const int maxTokens = 100;
 
 // LED configuration
