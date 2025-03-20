@@ -4,11 +4,11 @@
 #include <ArduinoJson.h>
 
 // WiFi credentials
-const char* ssid     = "rami";
-const char* password = "ramirami";
+const char* ssid     = "YOUR_WIFI_SSID";
+const char* password = "YOUR_PASSWORD";
 
 // Gemini API configuration
-const char* Gemini_Token = "AIzaSyAs44KUuNewiuVQynu3ywdByeJCepX0TzE";
+const char* Gemini_Token = "YOUR_GEMINI_API_KEY";
 const int maxTokens = 100;
 
 // LED configuration
