@@ -23,26 +23,8 @@ ESPExpress app(80);
 // ----- Helper Functions -----
 //
 
-// URL-decode a given string
-String urlDecode(const String& input) {
-  String decoded;
-  char temp[] = "0x00";
-  for (unsigned int i = 0; i < input.length(); i++) {
-    if (input[i] == '+') {
-      decoded += ' ';
-    } else if (input[i] == '%') {
-      if (i + 2 < input.length()) {
-        temp[2] = input[i + 1];
-        temp[3] = input[i + 2];
-        decoded += char(strtol(temp, NULL, 16));
-        i += 2;
-      }
-    } else {
-      decoded += input[i];
-    }
-  }
-  return decoded;
-}
+
+// If you need custom behavior, consider renaming your version or modifying the library.
 
 // Generate a strict prompt for Gemini that returns exactly one command (in lowercase)
 String generatePrompt(const String& question) {
@@ -86,11 +68,9 @@ String sendGeminiRequest(const String& question) {
   int httpCode = http.POST(payload);
   if (httpCode == HTTP_CODE_OK) {
     String response = http.getString();
-    
-    // Using a static buffer size for simplicity; adjust as needed.
+    // Warning: StaticJsonDocument is deprecated; consider using JsonDocument if you want to update
     StaticJsonDocument<1024> doc;
     DeserializationError error = deserializeJson(doc, response);
-    
     if (!error) {
       command = doc["candidates"][0]["content"]["parts"][0]["text"].as<String>();
       command.trim();
@@ -126,63 +106,43 @@ void processCommand(const String& command) {
 //
 
 // GET /manual/on – Manually turn the LED on.
-void handleManualOn(WiFiClient &client, const String &reqLine) {
+void handleManualOn(Request &req, Response &res) {
   digitalWrite(ledPin, HIGH);
   Serial.println("Manual command: LED turned ON");
-  client.println("HTTP/1.1 200 OK");
-  client.println("Content-Type: text/plain");
-  client.println("Connection: close");
-  client.println();
-  client.println("LED turned ON");
+  res.send("LED turned ON");
 }
 
 // GET /manual/off – Manually turn the LED off.
-void handleManualOff(WiFiClient &client, const String &reqLine) {
+void handleManualOff(Request &req, Response &res) {
   digitalWrite(ledPin, LOW);
   Serial.println("Manual command: LED turned OFF");
-  client.println("HTTP/1.1 200 OK");
-  client.println("Content-Type: text/plain");
-  client.println("Connection: close");
-  client.println();
-  client.println("LED turned OFF");
+  res.send("LED turned OFF");
 }
 
 // GET /api/ask?q=... – Process a Gemini API question.
-void handleApiAsk(WiFiClient &client, const String &reqLine) {
-  // Extract the query parameter. The request line will be like:
-  // "GET /api/ask?q=somequestion HTTP/1.1"
-  int qIndex = reqLine.indexOf("/api/ask?q=");
-  String geminiAnswer = "";
-  if (qIndex != -1) {
-    int start = qIndex + strlen("/api/ask?q=");
-    int endIndex = reqLine.indexOf(' ', start);
-    String query = reqLine.substring(start, endIndex);
-    String question = urlDecode(query);
-    Serial.println("API question: " + question);
-    
-    String command = sendGeminiRequest(question);
-    processCommand(command);
-    geminiAnswer = command;
-  }
-  String jsonResponse = "{\"answer\":\"" + geminiAnswer + "\"}";
-  client.println("HTTP/1.1 200 OK");
-  client.println("Content-Type: application/json");
-  client.println("Connection: close");
-  client.println();
-  client.println(jsonResponse);
+void handleApiAsk(Request &req, Response &res) {
+  // Use the library's urlDecode function (from ESPExpress)
+  
+  String query = req.getQuery("q");
+  Serial.println("API query: " + query);
+  String question = urlDecode(query);
+  Serial.println("API question: " + question);
+  
+  String command = sendGeminiRequest(question);
+  processCommand(command);
+  
+  String jsonResponse = "{\"answer\":\"" + command + "\"}";
+  res.sendJson(jsonResponse);
 }
 
 // GET / – Serve the main HTML page.
-void handleDefault(WiFiClient &client, const String &reqLine) {
-  client.println("HTTP/1.1 200 OK");
-  client.println("Content-Type: text/html");
-  client.println("Connection: close");
-  client.println();
-  
+void handleDefault(Request &req, Response &res) {
+  String htmlContent;
   size_t len = strlen_P(htmlPage);
   for (size_t i = 0; i < len; i++) {
-    client.write(pgm_read_byte_near(htmlPage + i));
+    htmlContent += (char)pgm_read_byte_near(htmlPage + i);
   }
+  res.send(htmlContent);
 }
 
 //
@@ -204,7 +164,7 @@ void setup() {
   
   Serial.println("Web server started on port 80");
   
-  // Start listening. (listen() is a blocking call in this minimal implementation.)
+  // Start listening. This call blocks inside the listen() loop.
   app.listen();
 }
 
