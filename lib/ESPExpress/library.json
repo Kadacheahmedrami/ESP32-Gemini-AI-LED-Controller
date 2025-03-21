@@ -1,0 +1,15 @@
+{
+    "name": "ESPExpress",
+    "version": "1.0.0",
+    "description": "A minimal Express-like HTTP server framework for the ESP32",
+    "keywords": "ESP32, HTTP, routing, server, express",
+    "authors": [
+      {
+        "name": "kadache ahmed rami",
+        "email": "a_kadache@estin.dz"
+      }
+    ],
+    "frameworks": "arduino",
+    "platforms": "espressif32"
+  }
+  

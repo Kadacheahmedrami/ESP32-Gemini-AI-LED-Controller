@@ -2,7 +2,8 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
-#include "index_html.h"  // Use external HTML file
+#include "index_html.h"      // External HTML file stored in PROGMEM
+#include "ESPExpress.h"      // Minimal Express‑like library header
 
 // WiFi credentials
 const char* ssid     = "Tenda1200";
@@ -15,10 +16,13 @@ const int maxTokens = 100;
 // LED configuration
 const int ledPin = 2;
 
-// Create an HTTP server on port 80
-WiFiServer server(80);
+// Create an instance of our minimal Express‑like server on port 80
+ESPExpress app(80);
 
+//
 // ----- Helper Functions -----
+//
+
 // URL-decode a given string
 String urlDecode(const String& input) {
   String decoded;
@@ -40,12 +44,12 @@ String urlDecode(const String& input) {
   return decoded;
 }
 
-// Generate a strict prompt for Gemini that returns only one command (in lowercase)
+// Generate a strict prompt for Gemini that returns exactly one command (in lowercase)
 String generatePrompt(const String& question) {
   return "You are a precise command interpreter for a digital LED. When given an input, respond with EXACTLY one of these commands: 'turn on', 'turn off', or 'no command'. Do not include any extra words, punctuation, or explanations. Input: " + question;
 }
 
-// Connect to WiFi with timeout and serial feedback
+// Connect to WiFi with a timeout and serial feedback
 void connectToWiFi() {
   Serial.print("Connecting to WiFi");
   WiFi.begin(ssid, password);
@@ -83,7 +87,8 @@ String sendGeminiRequest(const String& question) {
   if (httpCode == HTTP_CODE_OK) {
     String response = http.getString();
     
-    JsonDocument doc; // Updated from DynamicJsonDocument
+    // Using a static buffer size for simplicity; adjust as needed.
+    StaticJsonDocument<1024> doc;
     DeserializationError error = deserializeJson(doc, response);
     
     if (!error) {
@@ -102,7 +107,6 @@ String sendGeminiRequest(const String& question) {
   return command;
 }
 
-
 // Process the command from Gemini and control the LED accordingly
 void processCommand(const String& command) {
   Serial.println("Processing command: " + command);
@@ -117,99 +121,93 @@ void processCommand(const String& command) {
   }
 }
 
-// ----- HTTP Request Handling -----
-void handleClient(WiFiClient client) {
-  String request = client.readStringUntil('\r');
-  client.flush();
-  
-  Serial.println("Request: " + request);
-  
-  // Check for manual control endpoints
-  if (request.indexOf("GET /manual/on") >= 0) {
-    digitalWrite(ledPin, HIGH);
-    Serial.println("Manual command: LED turned ON");
-    client.println("HTTP/1.1 200 OK");
-    client.println("Content-Type: text/plain");
-    client.println("Connection: close");
-    client.println();
-    client.println("LED turned ON");
-    delay(1);
-    client.stop();
-    return;
-  }
-  if (request.indexOf("GET /manual/off") >= 0) {
-    digitalWrite(ledPin, LOW);
-    Serial.println("Manual command: LED turned OFF");
-    client.println("HTTP/1.1 200 OK");
-    client.println("Content-Type: text/plain");
-    client.println("Connection: close");
-    client.println();
-    client.println("LED turned OFF");
-    delay(1);
-    client.stop();
-    return;
-  }
-  
-  // Check if the request is for the API endpoint (/api/ask?q=...)
-  if (request.indexOf("GET /api/ask") >= 0) {
-    int qIndex = request.indexOf("GET /api/ask?q=") + strlen("GET /api/ask?q=");
-    int endIndex = request.indexOf(" ", qIndex);
-    String query = request.substring(qIndex, endIndex);
+//
+// ----- Route Handlers -----
+//
+
+// GET /manual/on – Manually turn the LED on.
+void handleManualOn(WiFiClient &client, const String &reqLine) {
+  digitalWrite(ledPin, HIGH);
+  Serial.println("Manual command: LED turned ON");
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-Type: text/plain");
+  client.println("Connection: close");
+  client.println();
+  client.println("LED turned ON");
+}
+
+// GET /manual/off – Manually turn the LED off.
+void handleManualOff(WiFiClient &client, const String &reqLine) {
+  digitalWrite(ledPin, LOW);
+  Serial.println("Manual command: LED turned OFF");
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-Type: text/plain");
+  client.println("Connection: close");
+  client.println();
+  client.println("LED turned OFF");
+}
+
+// GET /api/ask?q=... – Process a Gemini API question.
+void handleApiAsk(WiFiClient &client, const String &reqLine) {
+  // Extract the query parameter. The request line will be like:
+  // "GET /api/ask?q=somequestion HTTP/1.1"
+  int qIndex = reqLine.indexOf("/api/ask?q=");
+  String geminiAnswer = "";
+  if (qIndex != -1) {
+    int start = qIndex + strlen("/api/ask?q=");
+    int endIndex = reqLine.indexOf(' ', start);
+    String query = reqLine.substring(start, endIndex);
     String question = urlDecode(query);
     Serial.println("API question: " + question);
     
     String command = sendGeminiRequest(question);
     processCommand(command);
-    String jsonResponse = "{\"answer\":\"" + command + "\"}";
-    
-    client.println("HTTP/1.1 200 OK");
-    client.println("Content-Type: application/json");
-    client.println("Connection: close");
-    client.println();
-    client.println(jsonResponse);
-    
-    delay(1);
-    client.stop();
-    return;
+    geminiAnswer = command;
   }
-  
-  // Otherwise, serve the main HTML page from the external file.
+  String jsonResponse = "{\"answer\":\"" + geminiAnswer + "\"}";
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-Type: application/json");
+  client.println("Connection: close");
+  client.println();
+  client.println(jsonResponse);
+}
+
+// GET / – Serve the main HTML page.
+void handleDefault(WiFiClient &client, const String &reqLine) {
   client.println("HTTP/1.1 200 OK");
   client.println("Content-Type: text/html");
   client.println("Connection: close");
   client.println();
   
-  // Print the HTML stored in PROGMEM from index_html.h
   size_t len = strlen_P(htmlPage);
   for (size_t i = 0; i < len; i++) {
     client.write(pgm_read_byte_near(htmlPage + i));
   }
-  
-  delay(1);
-  client.stop();
 }
+
+//
+// ----- Setup & Main -----
+//
 
 void setup() {
   Serial.begin(115200);
   pinMode(ledPin, OUTPUT);
-  digitalWrite(ledPin, LOW); // Ensure LED starts off
+  digitalWrite(ledPin, LOW);
   
   connectToWiFi();
-  server.begin();
+  
+  // Register routes with our minimal Express‑like library.
+  app.get("/manual/on", handleManualOn);
+  app.get("/manual/off", handleManualOff);
+  app.get("/api/ask", handleApiAsk);
+  app.get("/", handleDefault);
+  
   Serial.println("Web server started on port 80");
+  
+  // Start listening. (listen() is a blocking call in this minimal implementation.)
+  app.listen();
 }
 
 void loop() {
-  WiFiClient client = server.available();
-  if (client) {
-    Serial.println("New client connected");
-    unsigned long timeout = millis();
-    while (client.connected() && !client.available()) {
-      if (millis() - timeout > 1000) break;
-      delay(1);
-    }
-    if (client.available()) {
-      handleClient(client);
-    }
-  }
+  // Not used when app.listen() blocks in setup.
 }
