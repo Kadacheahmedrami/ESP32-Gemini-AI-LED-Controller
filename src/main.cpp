@@ -2,7 +2,6 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
-#include <pgmspace.h>
 #include "index_html.h"  // Use external HTML file
 
 // WiFi credentials
@@ -10,7 +9,7 @@ const char* ssid     = "Tenda1200";
 const char* password = "78787878";
 
 // Gemini API configuration
-const char* Gemini_Token = "";
+const char* Gemini_Token = "AIzaSyAs44KUuNewiuVQynu3ywdByeJCepX0TzE";
 const int maxTokens = 100;
 
 // LED configuration
@@ -69,10 +68,12 @@ String sendGeminiRequest(const String& question) {
   String command = "no command";
   HTTPClient http;
   String url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + String(Gemini_Token);
+  
   if (!http.begin(url)) {
     Serial.println("Failed to connect to Gemini API endpoint");
     return command;
   }
+
   http.addHeader("Content-Type", "application/json");
   String prompt = generatePrompt(question);
   String payload = "{\"contents\": [{\"parts\":[{\"text\":\"" + prompt + "\"}]}],"
@@ -81,8 +82,10 @@ String sendGeminiRequest(const String& question) {
   int httpCode = http.POST(payload);
   if (httpCode == HTTP_CODE_OK) {
     String response = http.getString();
-    DynamicJsonDocument doc(2048);
+    
+    JsonDocument doc; // Updated from DynamicJsonDocument
     DeserializationError error = deserializeJson(doc, response);
+    
     if (!error) {
       command = doc["candidates"][0]["content"]["parts"][0]["text"].as<String>();
       command.trim();
@@ -94,9 +97,11 @@ String sendGeminiRequest(const String& question) {
   } else {
     Serial.println("HTTP POST failed: " + http.errorToString(httpCode));
   }
+  
   http.end();
   return command;
 }
+
 
 // Process the command from Gemini and control the LED accordingly
 void processCommand(const String& command) {
